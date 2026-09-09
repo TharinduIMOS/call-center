@@ -10,8 +10,26 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Persistence directory
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Normalize Vercel serverless request URLs if stripped by routing
+app.use((req, res, next) => {
+  if (req.url && !req.url.startsWith('/api') && (
+    req.url.startsWith('/auth') ||
+    req.url.startsWith('/leads') ||
+    req.url.startsWith('/batches') ||
+    req.url.startsWith('/stats') ||
+    req.url.startsWith('/agents') ||
+    req.url.startsWith('/health') ||
+    req.url.startsWith('/clear-history') ||
+    req.url.startsWith('/reset')
+  )) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
+// Persistence directory (uses /tmp on Vercel serverless due to read-only root)
+const isVercel = Boolean(process.env.VERCEL);
+const DATA_DIR = isVercel ? path.join('/tmp', 'data') : path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'leads_db.json');
 
 export interface StoredUser {
@@ -852,4 +870,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// In local or traditional container environments, start server immediately.
+// In Vercel serverless runtime, Vercel mounts the exported app.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
+export { app };
