@@ -13,7 +13,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import type { UserAccount } from '../types';
-import { safeFetchJson } from '../utils/apiClient';
+import { DataService } from '../services/dataService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -63,20 +63,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      const result = await safeFetchJson<{ user: UserAccount; message?: string }>('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: adminUsername,
-          password: adminPassword,
-        }),
-      });
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Admin login failed');
-      }
-
-      onLoginSuccess(result.data.user, 'Logged in as Administrator (Excel Upload Privileges Enabled)');
+      const result = await DataService.login(adminUsername, adminPassword);
+      onLoginSuccess(result.user, 'Logged in as Administrator (Excel Upload Privileges Enabled)');
       onClose();
     } catch (err: any) {
       setError(err.message || 'Login failed. Verify credentials.');
@@ -105,23 +93,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      const result = await safeFetchJson<{ user: UserAccount; message?: string }>('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: registerName.trim(),
-          username: registerUsername.trim().toLowerCase(),
-          password: registerPassword,
-        }),
-      });
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Registration failed');
-      }
+      const result = await DataService.register(
+        registerName.trim(),
+        registerUsername.trim().toLowerCase(),
+        registerPassword
+      );
 
       onLoginSuccess(
-        result.data.user,
-        `Welcome ${result.data.user.name}! Registered as Call Agent. (Excel upload is reserved for Admin)`
+        result.user,
+        `Welcome ${result.user.name}! Registered as Call Agent. (Excel upload is reserved for Admin)`
       );
       onClose();
     } catch (err: any) {
@@ -140,17 +120,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const p = customPass || userLoginPassword;
 
     try {
-      const result = await safeFetchJson<{ user: UserAccount; message?: string }>('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p }),
-      });
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Agent login failed');
-      }
-
-      onLoginSuccess(result.data.user, `Logged in as Call Agent: ${result.data.user.name}`);
+      const result = await DataService.login(u, p);
+      onLoginSuccess(result.user, `Logged in as Call Agent: ${result.user.name}`);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Login failed. Verify username and password.');

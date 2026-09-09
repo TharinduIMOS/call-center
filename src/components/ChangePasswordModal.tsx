@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { KeyRound, Lock, CheckCircle2, AlertCircle, X, Shield } from 'lucide-react';
 import type { UserAccount } from '../types';
-import { safeFetchJson } from '../utils/apiClient';
+import { DataService } from '../services/dataService';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -45,24 +45,16 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setLoading(true);
     try {
-      const result = await safeFetchJson<{ message?: string }>('/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: currentUser.username,
-          currentPassword,
-          newPassword,
-        }),
-      });
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Failed to update password');
-      }
+      const result = await DataService.changePassword(
+        currentUser.username,
+        currentPassword,
+        newPassword
+      );
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      onSuccess(result.data?.message || 'Password changed successfully!');
+      onSuccess(result.message || 'Password changed successfully!');
       onClose();
     } catch (err: any) {
       setError(err.message || 'An error occurred while changing your password.');

@@ -12,6 +12,7 @@ import { RoleExplainerModal } from './components/RoleExplainerModal';
 import { AuthModal } from './components/AuthModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { GuestWelcomeScreen } from './components/GuestWelcomeScreen';
+import { DataService } from './services/dataService';
 import {
   CheckCircle2,
   AlertCircle,
@@ -101,44 +102,27 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Fetch all leads and batches
+  // Fetch all leads and batches via Universal DataService
   const refreshData = useCallback(async () => {
     try {
-      const [leadsRes, batchesRes, statsRes] = await Promise.all([
-        fetch('/api/leads'),
-        fetch('/api/batches'),
-        fetch('/api/stats'),
-      ]);
-
-      if (leadsRes.ok) {
-        const data = await leadsRes.json();
-        setLeads(data.leads || []);
-        // If no active lead selected yet, pick the first pending lead
-        setCurrentLeadId((prev) => {
-          if (prev && data.leads.some((l: Lead) => l.id === prev)) return prev;
-          const pending = data.leads.find((l: Lead) => l.status === 'pending');
-          return pending ? pending.id : data.leads[0]?.id || null;
+      const data = await DataService.fetchAll();
+      setLeads(data.leads || []);
+      setBatches(data.batches || []);
+      if (data.overall) setStats(data.overall);
+      if (data.agents) {
+        setAgents(data.agents);
+        data.agents.forEach((ag: AgentPerformance) => {
+          if (ag.agentName && !availableAgents.includes(ag.agentName)) {
+            setAvailableAgents((prev) => [...prev, ag.agentName]);
+          }
         });
       }
 
-      if (batchesRes.ok) {
-        const data = await batchesRes.json();
-        setBatches(data.batches || []);
-      }
-
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        if (data.overall) setStats(data.overall);
-        if (data.agents) {
-          setAgents(data.agents);
-          // Auto-accumulate any agent names from server stats
-          data.agents.forEach((ag: AgentPerformance) => {
-            if (ag.agentName && !availableAgents.includes(ag.agentName)) {
-              setAvailableAgents((prev) => [...prev, ag.agentName]);
-            }
-          });
-        }
-      }
+      setCurrentLeadId((prev) => {
+        if (prev && data.leads.some((l: Lead) => l.id === prev)) return prev;
+        const pending = data.leads.find((l: Lead) => l.status === 'pending');
+        return pending ? pending.id : data.leads[0]?.id || null;
+      });
     } catch (err) {
       console.error('Error fetching data:', err);
     }
@@ -217,23 +201,9 @@ export default function App() {
     }
   ) => {
     try {
-      const res = await fetch(`/api/leads/${leadId}/call-update`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...update,
-          agentName: activeAgent,
-        }),
-      });
+      const updatedLead = await DataService.updateLead(leadId, update, activeAgent);
 
-      if (!res.ok) {
-        throw new Error('Failed to update lead');
-      }
-
-      const data = await res.json();
-      const updatedLead = data.lead;
-
-      // Optimistically update local state
+      // Update local state
       setLeads((prev) =>
         prev.map((l) => (l.id === leadId ? updatedLead : l))
       );
@@ -256,11 +226,9 @@ export default function App() {
   // Batch delete
   const handleDeleteBatch = async (batchId: string) => {
     try {
-      const res = await fetch(`/api/batches/${batchId}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('Batch removed successfully');
-        refreshData();
-      }
+      await DataService.deleteBatch(batchId);
+      showToast('Batch removed successfully');
+      refreshData();
     } catch {
       alert('Failed to delete batch');
     }
@@ -269,7 +237,7 @@ export default function App() {
   // Reset demo
   const handleResetDemo = async () => {
     if (confirm('Reset to initial customer-ready contacts and queue?')) {
-      await fetch('/api/reset-demo', { method: 'POST' });
+      await DataService.resetDemo();
       showToast('Queue restored to initial clean state');
       refreshData();
     }
@@ -289,22 +257,11 @@ export default function App() {
     if (!confirmed) return;
 
     try {
-      const res = await fetch('/api/admin/clear-all-call-history', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': 'admin',
-        },
-      });
-      if (res.ok) {
-        showToast('All call history has been cleared successfully.');
-        refreshData();
-      } else {
-        const data = await res.json();
-        showToast(data.error || 'Failed to clear call history', 'info');
-      }
+      await DataService.clearCallHistory();
+      showToast('All call history has been cleared successfully.');
+      refreshData();
     } catch {
-      showToast('Network error while clearing call history', 'info');
+      showToast('Error while clearing call history', 'info');
     }
   };
 

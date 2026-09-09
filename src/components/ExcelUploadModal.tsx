@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { parseExcelFile, downloadSampleExcel, type ExcelParseResult } from '../utils/excelParser';
 import type { UserAccount } from '../types';
+import { DataService } from '../services/dataService';
 
 interface ExcelUploadModalProps {
   isOpen: boolean;
@@ -126,25 +127,13 @@ export const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({
         throw new Error('No valid contact numbers found in the selected phone column.');
       }
 
-      const res = await fetch('/api/leads/batch-import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': currentUser?.role || 'admin',
-          'x-user-id': currentUser?.id || '',
-        },
-        body: JSON.stringify({
-          batchName: batchName || `WhatsApp Campaign ${new Date().toLocaleDateString()}`,
-          fileName: parseResult.fileName,
-          leads: leadsToImport,
-          uploadedBy: currentUser?.name || 'Admin',
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to import leads batch');
-      }
+      await DataService.importBatch(
+        batchName || `WhatsApp Campaign ${new Date().toLocaleDateString()}`,
+        parseResult.fileName,
+        leadsToImport,
+        currentUser?.name || 'Admin',
+        currentUser?.role || 'admin'
+      );
 
       onSuccess();
       onClose();
