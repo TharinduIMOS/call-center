@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Call Center Lead Tracker</title>
+    <meta name="description" content="Real-time WhatsApp call center outreach system with Excel sheet import for admins, number-by-number dialing for users, status ticks (Answered, Not Answered, Interested), call screenshot proof uploads, and live progress tracking." />
+    <meta property="og:title" content="Call Center Lead Tracker" />
+    <meta property="og:description" content="Real-time WhatsApp call center outreach system with Excel sheet import for admins, number-by-number dialing for users, status ticks (Answered, Not Answered, Interested), call screenshot proof uploads, and live progress tracking." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Firebase Web SDK Integration -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+      import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBNMujKZ1q2H9FomC3WwpdNTxSCZRuqy3Q",
+        authDomain: "call-center-86520.firebaseapp.com",
+        projectId: "call-center-86520",
+        storageBucket: "call-center-86520.firebasestorage.app",
+        messagingSenderId: "572916128519",
+        appId: "1:572916128519:web:2d9a6f1d5fcea7ba0483a2",
+        measurementId: "G-M4FPMQMFSP"
+      };
+
+      try {
+        const app = initializeApp(firebaseConfig);
+        if (typeof window !== 'undefined') {
+          getAnalytics(app);
+        }
+      } catch (e) {
+        console.warn('Firebase initialization in index.html:', e);
+      }
+    </script>
+  </body>
+</html>
+
