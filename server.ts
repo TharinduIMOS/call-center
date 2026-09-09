@@ -777,7 +777,7 @@ app.post('/api/leads/:id/screenshot', (req, res) => {
 
 // Delete Batch (Admin Only)
 app.delete('/api/batches/:id', (req, res) => {
-  const userRole = (req.headers['x-user-role'] || '').toString().toLowerCase();
+  const userRole = (req.headers['x-user-role'] || req.query.role || '').toString().toLowerCase();
   if (userRole !== 'admin') {
     res.status(403).json({
       error: 'Access Denied: Only administrators can delete batches.',
@@ -791,7 +791,70 @@ app.delete('/api/batches/:id', (req, res) => {
   saveDb();
 
   broadcastChange('batch_deleted', { batchId: id });
-  res.json({ success: true });
+  res.json({ success: true, message: `Batch ${id} and all associated leads deleted.` });
+});
+
+// Delete Call Log Entry or Reset Contact History (Admin Only)
+app.delete('/api/leads/:id/call-log/:logId?', (req, res) => {
+  const userRole = (req.headers['x-user-role'] || req.query.role || '').toString().toLowerCase();
+  if (userRole !== 'admin') {
+    res.status(403).json({
+      error: 'Access Denied: Only administrators can delete call logs.',
+    });
+    return;
+  }
+
+  const { id, logId } = req.params;
+  const leadIndex = db.leads.findIndex((l) => l.id === id);
+  if (leadIndex === -1) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+
+  const lead = db.leads[leadIndex];
+  const now = new Date().toISOString();
+
+  if (!logId || logId === 'all') {
+    lead.history = [];
+    lead.status = 'pending';
+    lead.callAttempts = 0;
+    lead.notes = '';
+    delete lead.lastCallTimestamp;
+    delete lead.callDurationSeconds;
+    delete lead.screenshotUrl;
+    delete lead.screenshotTimestamp;
+    delete lead.followUpDate;
+    delete lead.agentName;
+    lead.updatedAt = now;
+  } else {
+    lead.history = (lead.history || []).filter((h) => h.id !== logId);
+    lead.callAttempts = Math.max(0, lead.history.length);
+    if (lead.history.length === 0) {
+      lead.status = 'pending';
+      lead.notes = '';
+      delete lead.lastCallTimestamp;
+      delete lead.callDurationSeconds;
+      delete lead.screenshotUrl;
+      delete lead.screenshotTimestamp;
+      delete lead.followUpDate;
+      delete lead.agentName;
+    } else {
+      const latest = lead.history[0];
+      lead.status = latest.status;
+      lead.notes = latest.notes || '';
+      lead.lastCallTimestamp = latest.timestamp;
+      lead.callDurationSeconds = latest.callDurationSeconds;
+      lead.screenshotUrl = latest.screenshotUrl;
+      lead.followUpDate = latest.followUpDate;
+      lead.agentName = latest.agentName;
+    }
+    lead.updatedAt = now;
+  }
+
+  recalculateBatchStats(lead.batchId);
+  saveDb();
+  broadcastChange('lead_updated', { lead });
+  res.json({ success: true, lead });
 });
 
 // Clear All Call History & Reset Queue to Clean State (Admin Only)

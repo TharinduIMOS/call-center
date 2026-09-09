@@ -13,6 +13,9 @@ import {
   ThumbsUp,
   MessageSquare,
   ExternalLink,
+  Trash2,
+  RotateCcw,
+  Shield,
 } from 'lucide-react';
 import type { Lead, LeadStatus } from '../types';
 
@@ -20,14 +23,34 @@ interface LeadDetailModalProps {
   lead: Lead | null;
   onClose: () => void;
   onViewScreenshot: (lead: Lead) => void;
+  isAdmin?: boolean;
+  onDeleteCallLog?: (leadId: string, logId?: string) => Promise<void> | void;
 }
 
 export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   lead,
   onClose,
   onViewScreenshot,
+  isAdmin = false,
+  onDeleteCallLog,
 }) => {
   if (!lead) return null;
+
+  const handleClearAllContactLogs = async () => {
+    if (!onDeleteCallLog) return;
+    const confirm = window.confirm(
+      `Are you sure you want to delete all call logs for "${lead.customerName}"? This will reset the status to Pending and remove all agent call records.`
+    );
+    if (!confirm) return;
+    await onDeleteCallLog(lead.id, 'all');
+  };
+
+  const handleDeleteSingleLog = async (logId: string) => {
+    if (!onDeleteCallLog) return;
+    const confirm = window.confirm('Are you sure you want to delete this specific call log entry?');
+    if (!confirm) return;
+    await onDeleteCallLog(lead.id, logId);
+  };
 
   const getStatusBadge = (status: LeadStatus) => {
     switch (status) {
@@ -184,9 +207,24 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
         {/* Call History Timeline */}
         <div>
-          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <History className="w-3.5 h-3.5 text-indigo-600" /> Call Activity Log ({lead.history.length})
-          </h3>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-indigo-600" /> Call Activity Log ({lead.history.length})
+            </h3>
+
+            {isAdmin && lead.history.length > 0 && onDeleteCallLog && (
+              <button
+                id="modal-clear-lead-logs-btn"
+                type="button"
+                onClick={handleClearAllContactLogs}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 flex items-center gap-1 shadow-xs transition-colors"
+                title="Admin: Delete all call logs and reset this contact to pending"
+              >
+                <RotateCcw className="w-3 h-3 text-rose-600" />
+                <span>Reset Contact History</span>
+              </button>
+            )}
+          </div>
 
           {lead.history.length === 0 ? (
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-400">
@@ -197,7 +235,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {lead.history.map((hist, idx) => (
                 <div
                   key={hist.id || idx}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5"
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5 hover:border-slate-300 transition-colors"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -207,7 +245,19 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         {new Date(hist.timestamp).toLocaleString()}
                       </span>
                     </div>
-                    {getStatusBadge(hist.status)}
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(hist.status)}
+                      {isAdmin && onDeleteCallLog && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSingleLog(hist.id)}
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors"
+                          title="Admin: Delete this call log entry"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {hist.notes && (

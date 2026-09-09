@@ -20,6 +20,7 @@ import {
   LogOut,
   Award,
   LogIn,
+  Layers,
 } from 'lucide-react';
 import type { UserRole, UserAccount } from '../types';
 
@@ -29,6 +30,7 @@ interface NavbarProps {
   onOpenUpload: () => void;
   onResetDemo: () => void;
   onClearCallHistory?: () => void;
+  onOpenManageSheets?: () => void;
   activeAgent: string;
   onChangeAgent: (agent: string) => void;
   availableAgents: string[];
@@ -48,6 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenUpload,
   onResetDemo,
   onClearCallHistory,
+  onOpenManageSheets,
   activeAgent,
   onChangeAgent,
   availableAgents,
@@ -270,6 +273,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
 
                   <div className="pt-1 space-y-0.5">
+                    {isAdmin && onOpenManageSheets && (
+                      <button
+                        id="nav-dropdown-manage-sheets-btn"
+                        type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onOpenManageSheets();
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs text-indigo-700 hover:bg-indigo-50 font-semibold flex items-center gap-2 border border-indigo-200/50 bg-indigo-50/30 transition-colors"
+                        title="Manage, export, or delete uploaded Excel lead sheets"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Manage & Delete Sheets</span>
+                      </button>
+                    )}
+
                     {isAdmin && onClearCallHistory && (
                       <button
                         type="button"

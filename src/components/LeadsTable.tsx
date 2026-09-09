@@ -19,6 +19,9 @@ import {
   Calendar,
   MessageSquare,
   Tag,
+  Trash2,
+  Layers,
+  Shield,
 } from 'lucide-react';
 import type { Lead, LeadStatus, Batch } from '../types';
 import { exportLeadsToExcel } from '../utils/exportExcel';
@@ -30,6 +33,9 @@ interface LeadsTableProps {
   onViewLeadDetails: (lead: Lead) => void;
   onViewScreenshot: (lead: Lead) => void;
   onQuickUpdateStatus: (leadId: string, status: LeadStatus) => void;
+  isAdmin?: boolean;
+  onDeleteBatch?: (batchId: string) => Promise<void> | void;
+  onOpenManageSheets?: () => void;
 }
 
 export const LeadsTable: React.FC<LeadsTableProps> = ({
@@ -39,6 +45,9 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   onViewLeadDetails,
   onViewScreenshot,
   onQuickUpdateStatus,
+  isAdmin = false,
+  onDeleteBatch,
+  onOpenManageSheets,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -148,19 +157,59 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         {/* Filters & Export */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Batch Selector */}
-          <select
-            id="batch-filter-select"
-            value={selectedBatch}
-            onChange={(e) => setSelectedBatch(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
-          >
-            <option value="all">All Campaigns ({batches.length})</option>
-            {batches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} ({b.totalLeads})
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5">
+            <select
+              id="batch-filter-select"
+              value={selectedBatch}
+              onChange={(e) => setSelectedBatch(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-medium"
+            >
+              <option value="all">All Campaigns ({batches.length})</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.totalLeads})
+                </option>
+              ))}
+            </select>
+
+            {/* Delete Selected Sheet Button (Admin Only) */}
+            {isAdmin && selectedBatch !== 'all' && onDeleteBatch && (
+              <button
+                id="delete-selected-batch-btn"
+                type="button"
+                onClick={() => {
+                  const bObj = batches.find((b) => b.id === selectedBatch);
+                  const name = bObj ? bObj.name : 'this campaign';
+                  const confirmed = window.confirm(
+                    `Are you sure you want to permanently delete Excel sheet "${name}" and all its contacts?`
+                  );
+                  if (confirmed) {
+                    onDeleteBatch(selectedBatch);
+                    setSelectedBatch('all');
+                  }
+                }}
+                className="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                title="Delete this selected Excel sheet and leads (Admin Only)"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span className="hidden sm:inline">Delete Sheet</span>
+              </button>
+            )}
+
+            {/* Manage Sheets Button */}
+            {onOpenManageSheets && (
+              <button
+                id="open-manage-sheets-btn"
+                type="button"
+                onClick={onOpenManageSheets}
+                className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 shadow-xs transition-colors"
+                title="Manage and Delete Uploaded Excel Sheets (Admin)"
+              >
+                <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="hidden sm:inline">Manage Sheets</span>
+              </button>
+            )}
+          </div>
 
           {/* Screenshot Proof filter */}
           <select

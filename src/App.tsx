@@ -12,6 +12,7 @@ import { RoleExplainerModal } from './components/RoleExplainerModal';
 import { AuthModal } from './components/AuthModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { GuestWelcomeScreen } from './components/GuestWelcomeScreen';
+import { ManageSheetsModal } from './components/ManageSheetsModal';
 import { DataService } from './services/dataService';
 import {
   CheckCircle2,
@@ -24,6 +25,9 @@ import {
   UserPlus,
   KeyRound,
   Lock,
+  Trash2,
+  Layers,
+  Clock,
 } from 'lucide-react';
 
 export default function App() {
@@ -53,11 +57,32 @@ export default function App() {
   const [authModalTab, setAuthModalTab] = useState<'admin_login' | 'user_register' | 'user_login'>('admin_login');
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [roleExplainerOpen, setRoleExplainerOpen] = useState(false);
+  const [manageSheetsModalOpen, setManageSheetsModalOpen] = useState(false);
 
-  // Synchronize role whenever currentUser changes
+  // 1. Session Restoration on Refresh (Stays logged in unless 1 hour of inactivity has passed)
+  useEffect(() => {
+    const session = DataService.getSession(true);
+    if (session) {
+      if (session.isExpired) {
+        showToast('Your session expired due to 1 hour of inactivity.', 'info');
+      } else {
+        const user = session.user;
+        setCurrentUser(user);
+        setUserRole(user.role);
+        if (user.role === 'user') {
+          setActiveAgent(user.name);
+          setAvailableAgents((prev) => (prev.includes(user.name) ? prev : [...prev, user.name]));
+        }
+        showToast(`Welcome back, ${user.name}! (Session restored)`);
+      }
+    }
+  }, []);
+
+  // Synchronize role and persist session whenever currentUser logs in
   const handleUserLoginSuccess = (user: UserAccount, message?: string) => {
     setCurrentUser(user);
     setUserRole(user.role);
+    DataService.saveSession(user);
     if (user.role === 'user') {
       setActiveAgent(user.name);
       if (!availableAgents.includes(user.name)) {
@@ -68,7 +93,8 @@ export default function App() {
     showToast(message || `Logged in as ${user.name} (${user.role.toUpperCase()})`);
   };
 
-  const handleLogout = () => {
+  const handleLogout = (reason: 'manual' | 'inactivity' = 'manual') => {
+    DataService.clearSession();
     setCurrentUser(null);
     setUserRole('user');
     setLeads([]);
@@ -85,8 +111,56 @@ export default function App() {
       screenshotsUploaded: 0,
       completionRate: 0,
     });
-    showToast('Signed out successfully. Switched to guest view.');
+    if (reason === 'inactivity') {
+      showToast('You were automatically logged out after 1 hour of inactivity.', 'info');
+    } else {
+      showToast('Signed out successfully. Switched to guest view.');
+    }
   };
+
+  // 2. Track user interaction and auto-logout after 1 hour of inactivity
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastInteraction = Date.now();
+
+    const handleInteraction = () => {
+      const now = Date.now();
+      // Throttle updating localStorage activity to once every 15 seconds to maintain high performance
+      if (now - lastInteraction > 15000) {
+        lastInteraction = now;
+        DataService.updateSessionActivity();
+      }
+    };
+
+    const interactionEvents: Array<keyof WindowEventMap> = [
+      'mousedown',
+      'mousemove',
+      'keydown',
+      'scroll',
+      'touchstart',
+      'click',
+    ];
+
+    interactionEvents.forEach((evt) => {
+      window.addEventListener(evt, handleInteraction, { passive: true });
+    });
+
+    // Check every 20 seconds whether 1 hour has elapsed since last activity
+    const intervalId = setInterval(() => {
+      const session = DataService.getSession(false);
+      if (!session || session.isExpired) {
+        handleLogout('inactivity');
+      }
+    }, 20000);
+
+    return () => {
+      interactionEvents.forEach((evt) => {
+        window.removeEventListener(evt, handleInteraction);
+      });
+      clearInterval(intervalId);
+    };
+  }, [currentUser]);
 
   // UI Navigation & Modals
   const [currentTab, setCurrentTab] = useState<'dialer' | 'queue' | 'analytics'>('dialer');
@@ -223,14 +297,46 @@ export default function App() {
     });
   };
 
-  // Batch delete
+  // Batch delete (Admin Only)
   const handleDeleteBatch = async (batchId: string) => {
+    if (!currentUser || currentUser.role !== 'admin') {
+      showToast('Administrator sign in required to delete Excel sheets.', 'info');
+      setAuthModalTab('admin_login');
+      setAuthModalOpen(true);
+      return;
+    }
     try {
       await DataService.deleteBatch(batchId);
-      showToast('Batch removed successfully');
+      showToast('Excel sheet and all associated leads deleted successfully.');
       refreshData();
     } catch {
-      alert('Failed to delete batch');
+      showToast('Failed to delete Excel sheet', 'info');
+    }
+  };
+
+  // Call Log delete / reset (Admin Only)
+  const handleDeleteCallLog = async (leadId: string, logId?: string) => {
+    if (!currentUser || currentUser.role !== 'admin') {
+      showToast('Administrator sign in required to delete call logs.', 'info');
+      setAuthModalTab('admin_login');
+      setAuthModalOpen(true);
+      return;
+    }
+    try {
+      const updatedLead = await DataService.deleteLeadCallLog(leadId, logId);
+      if (updatedLead) {
+        if (detailModalLead && detailModalLead.id === leadId) {
+          setDetailModalLead(updatedLead);
+        }
+        showToast(
+          logId === 'all' || !logId
+            ? 'Contact call history cleared & status reset to pending.'
+            : 'Call log entry deleted successfully.'
+        );
+        refreshData();
+      }
+    } catch {
+      showToast('Failed to delete call log', 'info');
     }
   };
 
@@ -282,6 +388,7 @@ export default function App() {
         onOpenUpload={() => setUploadModalOpen(true)}
         onResetDemo={handleResetDemo}
         onClearCallHistory={handleClearCallHistory}
+        onOpenManageSheets={() => setManageSheetsModalOpen(true)}
         activeAgent={activeAgent}
         onChangeAgent={setActiveAgent}
         availableAgents={availableAgents}
@@ -320,6 +427,11 @@ export default function App() {
                 </span>
               )}
 
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-600 font-medium shadow-2xs">
+                <Clock className="w-3 h-3 text-indigo-600" />
+                Active Session • Auto-logout on 1h inactivity
+              </span>
+
               <span className="text-slate-600 hidden sm:inline text-xs">
                 {currentUser.role === 'admin' ? (
                   <>
@@ -335,14 +447,27 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-2">
               {currentUser.role === 'admin' ? (
-                <button
-                  id="context-bar-upload-excel-btn"
-                  type="button"
-                  onClick={() => setUploadModalOpen(true)}
-                  className="text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-1 text-xs"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" /> Upload Leads
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    id="context-bar-upload-excel-btn"
+                    type="button"
+                    onClick={() => setUploadModalOpen(true)}
+                    className="text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-1 text-xs"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" /> Upload Leads
+                  </button>
+
+                  <button
+                    id="context-bar-manage-sheets-btn"
+                    type="button"
+                    onClick={() => setManageSheetsModalOpen(true)}
+                    className="text-rose-700 hover:text-rose-900 font-semibold bg-white border border-rose-200 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs transition-colors text-xs"
+                    title="Manage and Delete Uploaded Excel Sheets (Admin)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Manage / Delete Sheets</span>
+                  </button>
+                </div>
               ) : (
                 <button
                   id="context-bar-switch-admin-btn"
@@ -419,6 +544,9 @@ export default function App() {
                 onViewLeadDetails={(lead) => setDetailModalLead(lead)}
                 onViewScreenshot={(lead) => setScreenshotModalLead(lead)}
                 onQuickUpdateStatus={handleQuickUpdateStatus}
+                isAdmin={currentUser?.role === 'admin'}
+                onDeleteBatch={handleDeleteBatch}
+                onOpenManageSheets={() => setManageSheetsModalOpen(true)}
               />
             )}
 
@@ -468,6 +596,23 @@ export default function App() {
         lead={detailModalLead}
         onClose={() => setDetailModalLead(null)}
         onViewScreenshot={(lead) => setScreenshotModalLead(lead)}
+        isAdmin={currentUser?.role === 'admin'}
+        onDeleteCallLog={handleDeleteCallLog}
+      />
+
+      <ManageSheetsModal
+        isOpen={manageSheetsModalOpen}
+        onClose={() => setManageSheetsModalOpen(false)}
+        batches={batches}
+        leads={leads}
+        onDeleteBatch={handleDeleteBatch}
+        onClearCallHistory={handleClearCallHistory}
+        onOpenUpload={() => setUploadModalOpen(true)}
+        isAdmin={currentUser?.role === 'admin'}
+        onOpenAdminLogin={() => {
+          setAuthModalTab('admin_login');
+          setAuthModalOpen(true);
+        }}
       />
 
       <RoleExplainerModal

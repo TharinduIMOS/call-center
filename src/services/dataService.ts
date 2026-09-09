@@ -13,7 +13,11 @@ const STORAGE_KEYS = {
   ADMIN_PASS: 'cc_admin_pass',
   LEADS: 'cc_leads_data',
   BATCHES: 'cc_batches_data',
+  SESSION: 'cc_active_session',
 };
+
+// 1 Hour Inactivity Timeout (in milliseconds)
+export const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 3,600,000 ms = 1 hour
 
 // Initial admin password default
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
@@ -531,13 +535,23 @@ export const DataService = {
     return { batch: newBatch, leads: newLeads };
   },
 
-  // Delete Batch
+  // Delete Batch (Admin Only)
   async deleteBatch(batchId: string): Promise<void> {
     try {
-      const res = await fetch(`/api/batches/${batchId}`, { method: 'DELETE' });
-      if (res.ok) return;
+      const res = await fetch(`/api/batches/${batchId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-role': 'admin' },
+      });
+      if (res.ok) {
+        // Sync local storage immediately
+        const existingBatches = getLocalJson<Batch[]>(STORAGE_KEYS.BATCHES, []);
+        const existingLeads = getLocalJson<Lead[]>(STORAGE_KEYS.LEADS, []);
+        setLocalJson(STORAGE_KEYS.BATCHES, existingBatches.filter((b) => b.id !== batchId));
+        setLocalJson(STORAGE_KEYS.LEADS, existingLeads.filter((l) => l.batchId !== batchId));
+        return;
+      }
     } catch {
-      // fallback
+      // fallback to local storage
     }
 
     const existingBatches = getLocalJson<Batch[]>(STORAGE_KEYS.BATCHES, []);
@@ -551,6 +565,79 @@ export const DataService = {
       STORAGE_KEYS.LEADS,
       existingLeads.filter((l) => l.batchId !== batchId)
     );
+  },
+
+  // Delete specific Call Log entry or Clear all call logs for a lead (Admin Only)
+  async deleteLeadCallLog(leadId: string, logId?: string): Promise<Lead | null> {
+    try {
+      const url = logId ? `/api/leads/${leadId}/call-log/${logId}` : `/api/leads/${leadId}/call-log/all`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'x-user-role': 'admin' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.lead) {
+          const leads = getLocalJson<Lead[]>(STORAGE_KEYS.LEADS, []);
+          const idx = leads.findIndex((l) => l.id === leadId);
+          if (idx !== -1) {
+            leads[idx] = data.lead;
+            setLocalJson(STORAGE_KEYS.LEADS, leads);
+          }
+          return data.lead;
+        }
+      }
+    } catch {
+      // fallback to local storage
+    }
+
+    const leads = getLocalJson<Lead[]>(STORAGE_KEYS.LEADS, []);
+    const idx = leads.findIndex((l) => l.id === leadId);
+    if (idx === -1) return null;
+
+    const lead = leads[idx];
+    const now = new Date().toISOString();
+
+    if (!logId || logId === 'all') {
+      lead.history = [];
+      lead.status = 'pending';
+      lead.callAttempts = 0;
+      lead.notes = '';
+      delete lead.lastCallTimestamp;
+      delete lead.callDurationSeconds;
+      delete lead.screenshotUrl;
+      delete lead.screenshotTimestamp;
+      delete lead.followUpDate;
+      delete lead.agentName;
+      lead.updatedAt = now;
+    } else {
+      lead.history = (lead.history || []).filter((h) => h.id !== logId);
+      lead.callAttempts = Math.max(0, lead.history.length);
+      if (lead.history.length === 0) {
+        lead.status = 'pending';
+        lead.notes = '';
+        delete lead.lastCallTimestamp;
+        delete lead.callDurationSeconds;
+        delete lead.screenshotUrl;
+        delete lead.screenshotTimestamp;
+        delete lead.followUpDate;
+        delete lead.agentName;
+      } else {
+        const latest = lead.history[0];
+        lead.status = latest.status;
+        lead.notes = latest.notes || '';
+        lead.lastCallTimestamp = latest.timestamp;
+        lead.callDurationSeconds = latest.callDurationSeconds;
+        lead.screenshotUrl = latest.screenshotUrl;
+        lead.followUpDate = latest.followUpDate;
+        lead.agentName = latest.agentName;
+      }
+      lead.updatedAt = now;
+    }
+
+    leads[idx] = lead;
+    setLocalJson(STORAGE_KEYS.LEADS, leads);
+    return lead;
   },
 
   // Clear all call history
@@ -655,5 +742,64 @@ export const DataService = {
         },
       },
     ]);
+  },
+
+  // --- Persistent Session Management (Stays logged in on refresh, 1 hr inactivity auto-logout) ---
+  saveSession(user: UserAccount): void {
+    setLocalJson(STORAGE_KEYS.SESSION, {
+      user,
+      lastActivity: Date.now(),
+    });
+  },
+
+  updateSessionActivity(): void {
+    const session = getLocalJson<{ user: UserAccount; lastActivity: number } | null>(
+      STORAGE_KEYS.SESSION,
+      null
+    );
+    if (session && session.user) {
+      session.lastActivity = Date.now();
+      setLocalJson(STORAGE_KEYS.SESSION, session);
+    }
+  },
+
+  getSession(touch: boolean = false): { user: UserAccount; isExpired: boolean; remainingMs: number } | null {
+    const session = getLocalJson<{ user: UserAccount; lastActivity: number } | null>(
+      STORAGE_KEYS.SESSION,
+      null
+    );
+    if (!session || !session.user || typeof session.lastActivity !== 'number') {
+      return null;
+    }
+    const elapsed = Date.now() - session.lastActivity;
+    if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+      this.clearSession();
+      return { user: session.user, isExpired: true, remainingMs: 0 };
+    }
+    if (touch) {
+      session.lastActivity = Date.now();
+      setLocalJson(STORAGE_KEYS.SESSION, session);
+    }
+    return {
+      user: session.user,
+      isExpired: false,
+      remainingMs: Math.max(0, INACTIVITY_TIMEOUT_MS - elapsed),
+    };
+  },
+
+  getLastActivityTimestamp(): number | null {
+    const session = getLocalJson<{ user: UserAccount; lastActivity: number } | null>(
+      STORAGE_KEYS.SESSION,
+      null
+    );
+    return session?.lastActivity || null;
+  },
+
+  clearSession(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+    } catch {
+      // ignore
+    }
   },
 };
